@@ -3,37 +3,96 @@ using UnityEngine.InputSystem;
 
 public class Car_MovementScript : MonoBehaviour
 {
+
     // Fields
-    [SerializeField] float acceleration;
-    [SerializeField] float handling;
-    [SerializeField] Transform cameraPos;
+    [Header("Wheel Colliders")]
+    [SerializeField] WheelCollider frontLeftWheelCollider;
+    [SerializeField] WheelCollider frontRightWheelCollider;
+    [SerializeField] WheelCollider rearLeftWheelCollider;
+    [SerializeField] WheelCollider rearRightWheelCollider;
 
-    // Private Variables
-    Rigidbody sphereRB;
+    [Header("Wheel Meshes")]
+    [SerializeField] Transform frontLeftMesh;
+    [SerializeField] Transform frontRightMesh;
+    [SerializeField] Transform rearLeftMesh;
+    [SerializeField] Transform rearRightMesh;
 
-    // Public Variables
-    public static Vector3 spherePosition;
+    [Header("Physics Parameters")]
+    [SerializeField] float motorForce = 1000f;       // Acceleration force
+    [SerializeField] float brakeForce = 2000f;       // Braking force
+    [SerializeField] float maxSteerAngle = 30f;      // Maximum turning angle
+    [SerializeField] float steerSpeed = 5f;          // Steering speed
+    float currentSteerAngle = 0f;
+    float currentMotorForce = 0f;
+    float currentBrakeForce = 0f;
 
-    private void Start()
+    [Header("Imported Tools")]
+
+    [SerializeField] InputActionAsset inputActions;
+    InputAction moveAction;
+    Vector2 mouseVector;
+    float moveInput;
+    float steerInput;
+
+    void Start()
     {
-        sphereRB = GetComponent<Rigidbody>();
-    }
-    void Update()
-    {
-        spherePosition = transform.position;
+        moveAction = inputActions.FindAction("Move");
     }
 
     void FixedUpdate()
     {
-        if (Keyboard.current.wKey.isPressed)
-            sphereRB.linearVelocity += new Vector3(0f, 0f, acceleration);
-        if (Keyboard.current.aKey.isPressed)
-            sphereRB.linearVelocity += new Vector3(-handling, 0f, 0f);
-        if (Keyboard.current.sKey.isPressed)
-            sphereRB.linearVelocity += new Vector3(0f, 0f, -acceleration);
-        if (Keyboard.current.dKey.isPressed)
-            sphereRB.linearVelocity += new Vector3(handling, 0f, 0f);
-        if (Keyboard.current == null)
-            sphereRB.linearVelocity = new Vector3(sphereRB.linearVelocity.x * 0.5f, 0f, sphereRB.linearVelocity.z * 0.5f);
+        mouseVector = moveAction.ReadValue<Vector2>();
+        moveInput = mouseVector.y;
+        steerInput = mouseVector.x;
+        // 2. Handle Acceleration & Braking (W/S)
+        currentMotorForce = moveInput * motorForce;
+        
+        // If pressing opposite to movement, apply brakes
+        if (moveInput < 0 && Vector3.Dot(transform.forward, GetComponent<Rigidbody>().linearVelocity) > 0.1f)
+        {
+            currentBrakeForce = brakeForce;
+            currentMotorForce = 0f;
+        }
+        else if (moveInput > 0 && Vector3.Dot(transform.forward, GetComponent<Rigidbody>().linearVelocity) < -0.1f)
+        {
+            currentBrakeForce = brakeForce;
+            currentMotorForce = 0f;
+        }
+        else
+        {
+            currentBrakeForce = 0f;
+        }
+
+        // Apply forces to rear wheels (Rear-Wheel Drive setup)
+        rearLeftWheelCollider.motorTorque = currentMotorForce;
+        rearRightWheelCollider.motorTorque = currentMotorForce;
+        rearLeftWheelCollider.brakeTorque = currentBrakeForce;
+        rearRightWheelCollider.brakeTorque = currentBrakeForce;
+
+        // 3. Slowly Turn Towards Target Direction (Smoothing)
+        float targetSteerAngle = steerInput * maxSteerAngle;
+        currentSteerAngle = Mathf.Lerp(currentSteerAngle, targetSteerAngle, Time.fixedDeltaTime * steerSpeed);
+
+        // Apply steering to front wheels
+        frontLeftWheelCollider.steerAngle = currentSteerAngle;
+        frontRightWheelCollider.steerAngle = currentSteerAngle;
+
+        // 4. Update Visual Wheel Meshes
+        UpdateWheelPosition(frontLeftWheelCollider, frontLeftMesh);
+        UpdateWheelPosition(frontRightWheelCollider, frontRightMesh);
+        UpdateWheelPosition(rearLeftWheelCollider, rearLeftMesh);
+        UpdateWheelPosition(rearRightWheelCollider, rearRightMesh);
+    }
+
+    void UpdateWheelPosition(WheelCollider collider, Transform transformMesh)
+    {
+        if (transformMesh == null) return;
+
+        Vector3 position;
+        Quaternion rotation;
+        collider.GetWorldPose(out position, out rotation);
+
+        transformMesh.position = position;
+        transformMesh.rotation = rotation;
     }
 }
